@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.net.VpnService;
 import android.os.Bundle;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -71,6 +72,11 @@ public class MainActivity extends Activity {
         bar.addView(stop, new LinearLayout.LayoutParams(w));
         bar.addView(clear, new LinearLayout.LayoutParams(w));
 
+        CheckBox all = new CheckBox(this);
+        all.setText("Tout afficher (positions, tableaux, accuses...)");
+        all.setChecked(TaxiProtocol.verbose);
+        all.setOnCheckedChangeListener((v, on) -> TaxiProtocol.verbose = on);
+
         status = new TextView(this);
         status.setTextSize(14);
         status.setPadding(8, 8, 8, 8);
@@ -85,6 +91,7 @@ public class MainActivity extends Activity {
 
         root.addView(pick);
         root.addView(bar);
+        root.addView(all);
         root.addView(status);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));

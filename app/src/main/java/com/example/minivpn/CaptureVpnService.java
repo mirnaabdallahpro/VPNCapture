@@ -165,7 +165,7 @@ public class CaptureVpnService extends VpnService {
     }
 
     private void logData(String proto, boolean up, Packet p, String decoded) {
-        if (decoded == null) return;
+        if (decoded == null || decoded.isEmpty()) return;
         String head = proto + (up ? " ->  " : " <-  ") + label(up ? p.dst : p.src)
                 + ":" + (up ? p.dstPort : p.srcPort);
         CaptureLog.add(head + "\n" + decoded);
@@ -206,7 +206,9 @@ public class CaptureVpnService extends VpnService {
                 byte[] data = Arrays.copyOfRange(buf, p.payOff, p.payOff + p.payLen);
                 c.advanceClient(p.payLen);
                 c.q.add(data);
-                logData("TCP", true, p, Decoder.decode(data, data.length, p.srcPort, p.dstPort, false));
+                String dec = c.upStream.feed(data, data.length); // protocole taxi (hex texte) ?
+                if (dec == null) dec = Decoder.decode(data, data.length, p.srcPort, p.dstPort, false);
+                logData("TCP", true, p, dec);
             }
             c.send(Packet.ACK, null, 0, false); // ack (aussi pour les doublons)
         }
@@ -221,6 +223,10 @@ public class CaptureVpnService extends VpnService {
 
     private final class TcpConn {
         static final int WINDOW = 32768;
+
+        /** Reassemblage ligne par ligne du protocole de dispatch (un objet par sens). */
+        final TaxiProtocol.Stream upStream = new TaxiProtocol.Stream(true);
+        final TaxiProtocol.Stream downStream = new TaxiProtocol.Stream(false);
 
         final String key;
         final int cip, cport, sip, sport;
@@ -317,7 +323,9 @@ public class CaptureVpnService extends VpnService {
                     fake.srcPort = sport;
                     fake.dst = cip;
                     fake.dstPort = cport;
-                    logData("TCP", false, fake, Decoder.decode(b, n, sport, cport, false));
+                    String dec = downStream.feed(b, n);
+                    if (dec == null) dec = Decoder.decode(b, n, sport, cport, false);
+                    logData("TCP", false, fake, dec);
                 }
                 if (!closed) {
                     send(Packet.FIN | Packet.ACK, null, 0, false);

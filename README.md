@@ -29,3 +29,27 @@ Petit VPN local Android (meme principe que PCAPdroid) qui capture le trafic de l
 - IPv4 seulement (l'IPv6 n'est pas route dans le VPN), pas de fragments IP.
 - Chaque segment TCP est decode seul (pas de reassemblage), pas de retransmission : c'est un outil d'analyse, pas un VPN de production.
 - A utiliser sur ton propre appareil et tes propres applications.
+
+## Decodage du protocole de dispatch taxi (port 54442)
+
+`TaxiProtocol` decode le flux TCP applicatif de l'appli de dispatch : le transport est du **texte
+hexadecimal, une trame par ligne**. Le flux est reassemble ligne par ligne (les gros messages sont
+coupes en plusieurs segments TCP) puis chaque trame est decodee :
+
+| Message | Sens | Contenu |
+|---|---|---|
+| `J` | serveur -> app | **offre de course** : depart, arrivee, client, telephones, heure de prise en charge |
+| `A` | app -> serveur | reponse a l'offre : `P` = acceptee, `T` = refusee / laissee passer |
+| `V` / `v` | serveur / app | confirmation serveur / accuse de reception chauffeur |
+| `a` | serveur -> app | course annulee ou retiree (hypothese) |
+| `U` | app -> serveur | debut de course (drapeau 1) / fin de trajet (drapeau 0) |
+| `B` | app -> serveur | points de trace GPS pendant la course |
+| `d` | app -> serveur | cloture de la course (montants en centimes, hypothese) |
+| `Z` | serveur -> app | courses / demandes annoncees par zone |
+| `M`, `n` | serveur -> app | messages texte du dispatch |
+| `E`, `p`, `q`, `b`, `F`... | app -> serveur | positions et etat (`L` libre, `I` indisponible, `s` en station, `C`/`D` en course) |
+
+Positions : longitude et latitude sur 4 octets en millisiemes de seconde d'arc. Dates : ms epoch.
+Case **"Tout afficher"** : montre aussi positions, tableaux de stations et accuses (masques par defaut).
+Les numeros de telephone sont partiellement masques (`TaxiProtocol.maskPhones`).
+Les champs marques *hypothese* sont deduits de l'observation, pas d'une specification.
