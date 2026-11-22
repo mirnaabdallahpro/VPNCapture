@@ -1,16 +1,31 @@
 package com.example.minivpn;
 
 import android.app.Activity;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.net.VpnService;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /** Ecran : choix de l'application cible, Demarrer / Arreter / Effacer + journal des paquets decodes. */
 public class MainActivity extends Activity {
@@ -72,6 +87,11 @@ public class MainActivity extends Activity {
         bar.addView(stop, new LinearLayout.LayoutParams(w));
         bar.addView(clear, new LinearLayout.LayoutParams(w));
 
+        Button save = new Button(this);
+        save.setAllCaps(false);
+        save.setText("Enregistrer le journal complet (.txt)");
+        save.setOnClickListener(v -> saveLog());
+
         CheckBox all = new CheckBox(this);
         all.setText("Tout afficher (positions, tableaux, accuses...)");
         all.setChecked(TaxiProtocol.verbose);
@@ -91,6 +111,7 @@ public class MainActivity extends Activity {
 
         root.addView(pick);
         root.addView(bar);
+        root.addView(save);
         root.addView(all);
         root.addView(status);
         root.addView(scroll, new LinearLayout.LayoutParams(
@@ -99,6 +120,53 @@ public class MainActivity extends Activity {
 
         logView.setText(CaptureLog.snapshot());
         refreshUi();
+    }
+
+    /**
+     * Ecrit TOUT le journal en memoire (CaptureLog, pas le TextView qui est tronque) dans un fichier .txt.
+     * Android 10+ : dossier Telechargements (MediaStore, aucune permission). Avant : dossier de l'app.
+     */
+    private void saveLog() {
+        String text = CaptureLog.snapshot();
+        if (text.isEmpty()) {
+            Toast.makeText(this, "Journal vide", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String name = "MiniVpnCapture_"
+                + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".txt";
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        try {
+            String where;
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentResolver cr = getContentResolver();
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                cv.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+                cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                cv.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                if (uri == null) throw new java.io.IOException("insert MediaStore a echoue");
+                try (OutputStream o = cr.openOutputStream(uri)) {
+                    o.write(data);
+                }
+                cv.clear();
+                cv.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                cr.update(uri, cv, null, null);
+                where = "Telechargements/" + name;
+            } else {
+                File dir = getExternalFilesDir(null);
+                if (dir == null) dir = getFilesDir();
+                File f = new File(dir, name);
+                try (FileOutputStream o = new FileOutputStream(f)) {
+                    o.write(data);
+                }
+                where = f.getAbsolutePath();
+            }
+            Toast.makeText(this, "Enregistre (" + data.length + " octets) : " + where,
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Echec : " + e, Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Met a jour libelles et boutons selon l'etat de la capture et l'application choisie. */
