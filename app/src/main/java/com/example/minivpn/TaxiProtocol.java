@@ -115,7 +115,7 @@ final class TaxiProtocol {
         try {
             return up ? client(p) : server(p);
         } catch (RuntimeException e) { // trame plus courte que prevu
-            return "Message '" + (char) (p[0] & 0xFF) + "' mal forme (" + p.length + " octets): " + hexShort(p, 32);
+            return "Message '" + (char) (p[0] & 0xFF) + "' mal forme (" + p.length + " octets): " + hexShort(p, 400);
         }
     }
 
@@ -167,7 +167,7 @@ final class TaxiProtocol {
                 if (!verbose) return null;
                 return "position/etat (" + t + ") " + where(p) + extra(p);
             default:
-                return verbose ? "message client '" + t + "' (" + p.length + " octets): " + hexShort(p, 32) : null;
+                return verbose ? "message client '" + t + "' (" + p.length + " octets): " + hexShort(p, 400) : null;
         }
     }
 
@@ -247,9 +247,9 @@ final class TaxiProtocol {
             case 'T': // tableau des stations : 6 octets par station (hypothese)
                 return verbose ? "Tableau des stations : " + stationTable(p) : null;
             case 'e': case 'S': case 'v': case 't': case 'r': case 'j': case 'F': case 'b': case 'f':
-                return verbose ? "message serveur '" + t + "' (" + p.length + " octets): " + hexShort(p, 40) : null;
+                return verbose ? "message serveur '" + t + "' (" + p.length + " octets): " + hexShort(p, 400) : null;
             default:
-                return verbose ? "message serveur '" + t + "' (" + p.length + " octets): " + hexShort(p, 40) : null;
+                return verbose ? "message serveur '" + t + "' (" + p.length + " octets): " + hexShort(p, 400) : null;
         }
     }
 
@@ -314,7 +314,7 @@ final class TaxiProtocol {
                     + " - position " + gps(intOf(f, 3), intOf(f, 4)));
             i = j;
         }
-        if (items.isEmpty()) return verbose ? "annonce (Z) illisible: " + hexShort(p, 40) : null;
+        if (items.isEmpty()) return verbose ? "annonce (Z) illisible: " + hexShort(p, 400) : null;
         String sig = items.toString();
         if (!verbose && sig.equals(lastAnnounce)) return null; // pas de repetition
         lastAnnounce = sig;

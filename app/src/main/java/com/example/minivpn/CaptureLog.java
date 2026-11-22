@@ -11,6 +11,8 @@ final class CaptureLog {
         void onLine(String line);
     }
 
+    /** Nombre d'entrees gardees en memoire (une longue course en genere plusieurs centaines). */
+    private static final int MAX_ENTRIES = 5000;
     private static final ArrayDeque<String> BUF = new ArrayDeque<>();
     private static Listener listener;
     private static final SimpleDateFormat FMT = new SimpleDateFormat("HH:mm:ss", Locale.US);
@@ -18,7 +20,7 @@ final class CaptureLog {
     static synchronized void add(String s) {
         String line = "[" + FMT.format(new Date()) + "] " + s;
         BUF.add(line);
-        while (BUF.size() > 400) BUF.removeFirst();
+        while (BUF.size() > MAX_ENTRIES) BUF.removeFirst();
         if (listener != null) listener.onLine(line);
     }
 
