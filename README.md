@@ -53,3 +53,13 @@ Positions : longitude et latitude sur 4 octets en millisiemes de seconde d'arc. 
 Case **"Tout afficher"** : montre aussi positions, tableaux de stations et accuses (masques par defaut).
 Les numeros de telephone sont partiellement masques (`TaxiProtocol.maskPhones`).
 Les champs marques *hypothese* sont deduits de l'observation, pas d'une specification.
+
+
+## Interface « Courses reçues »
+
+L'écran principal affiche désormais une section dédiée aux offres de course détectées :
+- une carte par offre, avec numéro, horodatage de réception, horodatage d'envoi et prise en charge prévue ;
+- départ et arrivée avec zones et coordonnées GPS lorsqu'elles sont présentes, client, téléphones masqués, note et clé technique ;
+- mise à jour du statut à la réception d'une réponse chauffeur (`P` acceptée, `T` refusée/laissée passer) ou d'une confirmation serveur (`V`).
+
+Les offres restent en mémoire pendant l'exécution de l'application et sont effacées avec le bouton « Effacer ». Le journal technique reste accessible séparément. L'horodatage « Reçue le » est l'heure locale de l'appareil au moment où la trame complète est décodée ; « Envoyée par le serveur » et « Prise en charge prévue » proviennent des champs décodés de l'offre.

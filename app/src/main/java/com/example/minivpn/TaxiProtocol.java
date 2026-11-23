@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
 
 /**
  * Decodeur du protocole de dispatch taxi observe sur le port TCP 54442.
@@ -41,7 +42,46 @@ final class TaxiProtocol {
     /** numero de course -> "Depart -> Arrivee" (appris du message 'J'). */
     private static final Map<Integer, String> RIDES = new ConcurrentHashMap<>();
 
+
     private static volatile String lastAnnounce = "";
+
+    /** Offres detectees pendant la capture, conservees en memoire jusqu'a effacement. */
+    static final class RideOffer {
+        final int id;
+        final String receivedAt, sentAt, pickupAt, key, departure, arrival, client, phones, note;
+        volatile String status = "Reçue — aucune réponse détectée";
+        volatile String responseAt = "";
+
+        RideOffer(int id, String receivedAt, String sentAt, String pickupAt, String key,
+                  String departure, String arrival, String client, String phones, String note) {
+            this.id = id; this.receivedAt = receivedAt; this.sentAt = sentAt; this.pickupAt = pickupAt;
+            this.key = key; this.departure = departure; this.arrival = arrival;
+            this.client = client; this.phones = phones; this.note = note;
+        }
+    }
+
+    interface OffersListener { void onOffersChanged(); }
+    private static final List<RideOffer> OFFERS = new ArrayList<>();
+    private static volatile OffersListener offersListener;
+
+    static synchronized List<RideOffer> offersSnapshot() {
+        return new ArrayList<>(OFFERS);
+    }
+    static void setOffersListener(OffersListener l) { offersListener = l; }
+    static synchronized void clearOffers() {
+        OFFERS.clear();
+        notifyOffersChanged();
+    }
+    private static void notifyOffersChanged() {
+        OffersListener l = offersListener;
+        if (l != null) l.onOffersChanged();
+    }
+    private static String localNow() {
+        SimpleDateFormat f = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.FRANCE);
+        f.setTimeZone(TimeZone.getTimeZone("Europe/Paris"));
+        return f.format(new Date());
+    }
+
 
     private TaxiProtocol() { }
 
@@ -130,6 +170,7 @@ final class TaxiProtocol {
                 int ride = u16(p, 13);
                 char act = (char) (p[12] & 0xFF);
                 int station = u16(p, 10);
+                updateOfferStatus(ride, act);
                 String what = act == 'P' ? "ACCEPTEE par le chauffeur"
                         : act == 'T' ? "REFUSEE / laissee passer par le chauffeur"
                         : "reponse '" + act + "' du chauffeur";
@@ -197,8 +238,10 @@ final class TaxiProtocol {
             case 'J':
                 return offer(p);
             case 'V':
+                updateOfferStatus(u16(p, 1), 'V');
                 return ride(u16(p, 1)) + " : CONFIRMEE par le serveur";
             case 'a':
+                updateOfferStatus(u16(p, 1), 'X');
                 return ride(u16(p, 1)) + " : ANNULEE / retiree par le dispatch (hypothese)";
             case 'M':
                 return "MESSAGE DU DISPATCH : " + cleanText(p, 1, p.length);
@@ -253,6 +296,22 @@ final class TaxiProtocol {
         }
     }
 
+
+    private static synchronized void updateOfferStatus(int id, char action) {
+        for (int i = OFFERS.size() - 1; i >= 0; i--) {
+            RideOffer o = OFFERS.get(i);
+            if (o.id == id) {
+                if (action == 'P') o.status = "Acceptée par le chauffeur";
+                else if (action == 'T') o.status = "Refusée / laissée passer";
+                else if (action == 'V') o.status = "Confirmée par le serveur";
+                else if (action == 'X') o.status = "Annulée / retirée (interprétation)";
+                o.responseAt = localNow();
+                notifyOffersChanged();
+                return;
+            }
+        }
+    }
+
     /** 'J' : offre de course complete (TLV : tag 1 octet, longueur 2 octets, valeur). */
     private static String offer(byte[] p) {
         int id = u16(p, 1);
@@ -290,6 +349,24 @@ final class TaxiProtocol {
         if (!t1.isEmpty() || !t2.isEmpty())
             s.append("\n  telephone   : ").append(t1).append(t1.isEmpty() || t2.isEmpty() ? "" : " / ").append(t2);
         if (!note.isEmpty()) s.append("\n  note        : ").append(note);
+
+        String pickupAt = "";
+        if (t0 != null && t0.length == 8) pickupAt = time(u64(t0, 0));
+        String sentText = time(sentAt);
+        String client = pax + (firm.isEmpty() ? "" : " (" + firm + ")");
+        String phones = t1 + (t1.isEmpty() || t2.isEmpty() ? "" : " / ") + t2;
+        String departureDetail = from + (pz != 0 ? " [zone " + zoneName(pz) + "]" : "")
+                + (f.get(0x0a) != null && f.get(0x0b) != null
+                ? " — GPS " + gps(intOf(f, 0x0a), intOf(f, 0x0b)) : "");
+        String arrivalDetail = to + (dz != 0 ? " [zone " + zoneName(dz) + "]" : "")
+                + (f.get(0x10) != null && f.get(0x11) != null
+                ? " — GPS " + gps(intOf(f, 0x10), intOf(f, 0x11)) : "");
+        synchronized (TaxiProtocol.class) {
+            OFFERS.add(0, new RideOffer(id, localNow(), sentText, pickupAt, key,
+                    departureDetail, arrivalDetail, client, phones, note));
+            while (OFFERS.size() > 300) OFFERS.remove(OFFERS.size() - 1);
+        }
+        notifyOffersChanged();
         return s.toString();
     }
 

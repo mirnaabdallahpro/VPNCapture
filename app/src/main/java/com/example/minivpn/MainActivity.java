@@ -6,6 +6,9 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.view.View;
 import android.net.Uri;
 import android.net.VpnService;
 import android.os.Build;
@@ -35,7 +38,9 @@ public class MainActivity extends Activity {
     private static final String K_LABEL = "target_label";
 
     private TextView logView, status;
-    private ScrollView scroll;
+    private ScrollView scroll, offersScroll;
+    private LinearLayout offersContainer;
+    private Button journalToggle;
     private Button pick, start, stop;
     private SharedPreferences prefs;
 
@@ -78,7 +83,9 @@ public class MainActivity extends Activity {
         clear.setText("Effacer");
         clear.setOnClickListener(v -> {
             CaptureLog.clear();
+            TaxiProtocol.clearOffers();
             logView.setText("");
+            refreshOffersUi();
         });
 
         LinearLayout.LayoutParams w = new LinearLayout.LayoutParams(0,
@@ -109,16 +116,44 @@ public class MainActivity extends Activity {
         scroll = new ScrollView(this);
         scroll.addView(logView);
 
+        TextView offersTitle = new TextView(this);
+        offersTitle.setText("COURSES REÇUES");
+        offersTitle.setTextSize(18);
+        offersTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        offersTitle.setTextColor(Color.rgb(20, 35, 60));
+        offersTitle.setPadding(4, 18, 4, 8);
+
+        offersContainer = new LinearLayout(this);
+        offersContainer.setOrientation(LinearLayout.VERTICAL);
+        offersScroll = new ScrollView(this);
+        offersScroll.setFillViewport(false);
+        offersScroll.addView(offersContainer);
+
+        journalToggle = new Button(this);
+        journalToggle.setAllCaps(false);
+        journalToggle.setText("Afficher le journal technique");
+        journalToggle.setOnClickListener(v -> {
+            boolean show = scroll.getVisibility() != View.VISIBLE;
+            scroll.setVisibility(show ? View.VISIBLE : View.GONE);
+            journalToggle.setText(show ? "Masquer le journal technique" : "Afficher le journal technique");
+        });
+        scroll.setVisibility(View.GONE);
+
         root.addView(pick);
         root.addView(bar);
         root.addView(save);
         root.addView(all);
         root.addView(status);
+        root.addView(offersTitle);
+        root.addView(offersScroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.2f));
+        root.addView(journalToggle);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
 
         logView.setText(CaptureLog.snapshot());
+        refreshOffersUi();
         refreshUi();
     }
 
@@ -126,6 +161,77 @@ public class MainActivity extends Activity {
      * Ecrit TOUT le journal en memoire (CaptureLog, pas le TextView qui est tronque) dans un fichier .txt.
      * Android 10+ : dossier Telechargements (MediaStore, aucune permission). Avant : dossier de l'app.
      */
+
+    /** Affiche les offres structurees detectees par le decodeur du protocole taxi. */
+    private void refreshOffersUi() {
+        if (offersContainer == null) return;
+        offersContainer.removeAllViews();
+        java.util.List<TaxiProtocol.RideOffer> items = TaxiProtocol.offersSnapshot();
+        if (items.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("Aucune course reçue pour le moment. Démarrez la capture et sélectionnez l'application de dispatch.");
+            empty.setTextSize(13);
+            empty.setTextColor(Color.DKGRAY);
+            empty.setPadding(12, 16, 12, 16);
+            offersContainer.addView(empty);
+            return;
+        }
+        for (TaxiProtocol.RideOffer o : items) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(16, 12, 16, 12);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.rgb(247, 249, 252));
+            bg.setCornerRadius(18);
+            bg.setStroke(1, Color.rgb(220, 226, 235));
+            card.setBackground(bg);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            cp.setMargins(0, 0, 0, 12);
+            card.setLayoutParams(cp);
+
+            TextView title = new TextView(this);
+            title.setText("Course n°" + o.id);
+            title.setTextSize(17);
+            title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            title.setTextColor(Color.rgb(20, 35, 60));
+            card.addView(title);
+
+            TextView statusText = new TextView(this);
+            statusText.setText(o.status);
+            statusText.setTextSize(13);
+            statusText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            statusText.setTextColor(o.status.startsWith("Acceptée") || o.status.startsWith("Confirmée")
+                    ? Color.rgb(20, 125, 75)
+                    : o.status.startsWith("Refusée") || o.status.startsWith("Annulée")
+                    ? Color.rgb(180, 75, 45) : Color.rgb(150, 105, 20));
+            statusText.setPadding(0, 3, 0, 8);
+            card.addView(statusText);
+
+            addOfferLine(card, "Reçue le", o.receivedAt);
+            addOfferLine(card, "Envoyée par le serveur", o.sentAt);
+            addOfferLine(card, "Prise en charge prévue", o.pickupAt);
+            if (!o.responseAt.isEmpty()) addOfferLine(card, "Réponse observée le", o.responseAt);
+            addOfferLine(card, "Départ", o.departure);
+            addOfferLine(card, "Arrivée", o.arrival);
+            if (!o.client.isEmpty()) addOfferLine(card, "Client", o.client);
+            if (!o.phones.isEmpty()) addOfferLine(card, "Téléphone", o.phones);
+            if (!o.note.isEmpty()) addOfferLine(card, "Note", o.note);
+            if (!o.key.isEmpty()) addOfferLine(card, "Clé technique", o.key);
+            offersContainer.addView(card);
+        }
+    }
+
+    private void addOfferLine(LinearLayout parent, String label, String value) {
+        if (value == null || value.trim().isEmpty()) return;
+        TextView t = new TextView(this);
+        t.setText(label + " : " + value);
+        t.setTextSize(13);
+        t.setTextColor(Color.rgb(55, 65, 80));
+        t.setPadding(0, 2, 0, 3);
+        parent.addView(t);
+    }
+
     private void saveLog() {
         String text = CaptureLog.snapshot();
         if (text.isEmpty()) {
@@ -193,6 +299,8 @@ public class MainActivity extends Activity {
             if (t.length() > 60000) logView.setText(t.subSequence(t.length() - 40000, t.length()));
             scroll.post(() -> scroll.fullScroll(ScrollView.FOCUS_DOWN));
         }));
+        TaxiProtocol.setOffersListener(() -> runOnUiThread(this::refreshOffersUi));
+        refreshOffersUi();
         CaptureVpnService.stateListener = () -> runOnUiThread(this::refreshUi);
         refreshUi();
     }
@@ -200,6 +308,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onStop() {
         CaptureLog.setListener(null);
+        TaxiProtocol.setOffersListener(null);
         CaptureVpnService.stateListener = null;
         super.onStop();
     }
